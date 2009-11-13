@@ -20,7 +20,6 @@ DEBUG = True
 TEMPLATE_DEBUG = DEBUG
 
 ADMINS = (
-    ('a63fvb48', 'a63fvb48@gmail.com'),
 )
 
 MANAGERS = ADMINS
@@ -102,7 +101,7 @@ TEMPLATE_DIRS = (
 
 INSTALLED_APPS = (
      'appengine_django',
-     'a63fvb48',
+     'schedule',
 #    'django.contrib.auth',
 #    'django.contrib.contenttypes',
 #    'django.contrib.sessions',

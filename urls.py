@@ -20,5 +20,5 @@ urlpatterns = patterns('',
 
 	# Uncomment this for admin:
 	# (r'^admin/', include('django.contrib.admin.urls')),
-	(r'', include('a63fvb48.urls'))
+	(r'', include('schedule.urls'))
 )
