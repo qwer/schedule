@@ -15,7 +15,7 @@ body {
 	font-size: 1.0em;
 }
 
-.new, .del { font-size: 0.8em; }
+.new, .del, .rename { font-size: 0.8em; }
 
 span.expand {
 	font-family: Courier, monospace;
@@ -52,6 +52,7 @@ function displayLinks(g, d) {
 	var node = $(g.div).children('span');
 	$(node).children('.new').css('display', d);
 	$(node).children('.del').css('display', d);
+	$(node).children('.rename').css('display', d);
 }
 
 function showLinks(g) {
@@ -95,19 +96,21 @@ function createGroupDiv(g, tree) {
 		(tree.treeImages 
 			? '<img src="' + tree.treeImages.empty + '" class="expand"/>'
 			: '<span class="expand">&nbsp;</span>') +
-		g.name + '&nbsp;' + 
+		'<span class="name">' + g.name + '</span>&nbsp;' + 
 		'<a href="#" class="new">new</a>&nbsp;' + 
-		'<a href="#" class="del">delete</a></span>' + 
+		'<a href="#" class="del">delete</a>&nbsp;' + 
+		'<a href="#" class="rename">rename</a></span>' + 
 		'<div class="children"></div>');
 	g.div = div[0];
 	div.data = g;
 	var node = $(div).children('span');
-	$(node).mouseover(function() { showLinks(g); });
-	$(node).mouseout (function() { hideLinks(g); });
+	$(node).mouseover(reduce(showLinks, g));
+	$(node).mouseout (reduce(hideLinks, g));
 	hideLinks(g);
-	$(node).children('.expand').click(function() { expandCollapse(g); });
-	$(node).children('.new').click(function() { return startNewGroup(g); });
-	$(node).children('.del').click(function() { return deleteGroup(g); });
+	$(node).children('.expand').click(reduce(expandCollapse, g));
+	$(node).children('.new').click(reduce(startNewGroup, g));
+	$(node).children('.del').click(reduce(deleteGroup, g));
+	$(node).children('.rename').click(reduce(startRenameGroup, g));
 	return div;
 }
 
@@ -156,8 +159,8 @@ function createNewGroupDiv(g, ng) {
 	var div = $('<div class="group"><input type="text" value="' + 
 		ng.name + '"/>&nbsp;' + 
 		'<a href="#">ok</a>&nbsp;<a href="#">cancel</a></div>');
-	$(div.find('a')[0]).click(function() { return createGroup(g, ng, div); });
-	$(div.find('a')[1]).click(function() { return cancelNewGroup(g, ng, div); });
+	$(div.find('a')[0]).click(reduce3(createGroup, g, ng, div));
+	$(div.find('a')[1]).click(reduce3(cancelNewGroup, g, ng, div));
 	div.data = ng;
 	return div;
 }
@@ -208,6 +211,54 @@ function deleteGroup(g) {
 		complete: reduce2(unblockElement, "#tree", 0)
 	});
 	return false;
+}
+
+function startRenameGroup(g) {
+	var name = $(g.div).children('span').children('.name');
+	name.html(
+		'<input type="text" id="newname" value="' + g.name + '"/>' +
+		'<a href="#" class="ok">ok</a>' + 
+		'<a href="#" class="cancel">cancel</a>');
+	name.children('.ok').click(reduce(renameGroup, g));
+	name.children('.cancel').click(reduce(cancelRenameGroup, g));
+}
+
+function cancelRenameGroup(g) {
+	 $(g.div).children('span').children('.name').html(g.name);
+}
+
+function jsonGet(url, obj, success, error, complete)
+{
+	$.ajax({
+		url: url,
+		type: 'GET', 
+		cache: false,
+		dataType: 'json',
+		data: obj,
+		async: true,
+		success: success,
+		error: error,
+		complete: complete
+	});
+}
+
+function renameGroup(g) {
+	//$(g.div)
+	var name = $(g.div).find('#newname')[0].value;
+	g.name = name;
+	$(g.div).children('span').children('.name').html(g.name);
+	
+	block("#tree", 0, 300);
+	jsonGet(
+		'/groups_put/',
+		{ id: g.id, name: g.name },
+		function (data) {
+		},
+		function () { 
+			alert("error");
+		},
+		reduce2(unblockElement, "#tree", 0)
+	);
 }
 
 function createTree2(id, g) {

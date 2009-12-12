@@ -303,3 +303,21 @@ def groups_delete(request):
 	deleteGroup(key)
 	return JsonResponse({})
 
+def groups_put(request):
+	if (not 'id' in request.REQUEST or not 'name' in request.REQUEST):
+		return JsonResponse({}, 400) 
+	id = request.REQUEST['id']
+	name = request.REQUEST['name']
+	try:
+		key = db.Key(id)
+		group = Group.get(key)
+	except:
+		return JsonResponse({}, 404) 
+	
+	group.name = name
+	group.put()
+	return JsonResponse({}) 
+	
+	
+	
+	

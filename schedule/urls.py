@@ -1,7 +1,7 @@
 from django.conf.urls.defaults import *
 #from views import hello, current_datetime, hours_ahead, contact
 from views import index, authsub, cal, calendar, events, event
-from views import groups, groups_post, groups_delete
+from views import groups, groups_post, groups_delete, groups_put
 
 urlpatterns = patterns('',
 	(r'^$', index),
@@ -11,6 +11,7 @@ urlpatterns = patterns('',
 	(r'^event/$', event),
 	(r'^groups/$', groups),
 	(r'^groups_post/$', groups_post),
+	(r'^groups_put/$', groups_put),
 	(r'^groups_delete/$', groups_delete),
 	(r'^authsub/$', authsub),
 	

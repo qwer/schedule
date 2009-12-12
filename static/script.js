@@ -15,7 +15,9 @@ function reduce2(f, a1, a2) {
 	return function() { return f(a1, a2); };
 }
 
-
+function reduce3(f, a1, a2, a3) { 
+	return function() { return f(a1, a2, a3); };
+}
 
 function block(el, t, to) {
 	var e = el != undefined ? $(el)[0] : document;
