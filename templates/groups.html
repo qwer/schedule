@@ -5,19 +5,32 @@
 
 {% block head %}
 <style>
-.group { padding-left: 2em; }
+
+.group {
+	padding-left: 2.0em;
+}
+
 body {
 	font-family: Tahoma, Arial, sans;
-	font-size: 1em;
+	font-size: 1.0em;
 }
+
 .new, .del { font-size: 0.8em; }
-.expand {
+
+span.expand {
 	font-family: Courier, monospace;
 	font-weight: bold;
 	cursor: pointer;
 	margin: 0.5em;
 }
+
+img.expand {
+	cursor: pointer;
+	padding-right: 0.3em;
+}
+
 .children { }
+
 </style>
 <script src="/static/jquery.js" type="text/javascript"></script>
 <script src="/static/jqueryUI.js" type="text/javascript"></script>
@@ -25,6 +38,11 @@ body {
 <script src="/static/script.js" type="text/javascript"></script>
 <script language="JavaScript">
 
+var treeImages = {
+	opened: '/static/tree_opened.gif',
+	closed: '/static/tree_closed.gif',
+	empty:  '/static/tree_white.gif'
+};
 
 
 var groups = {{ groups_json|safe }};
@@ -44,27 +62,44 @@ function hideLinks(g) {
 	displayLinks(g, 'none');
 }
 
-function expandCollapse(g) {
-	if (!g.children || g.children.length == 0)
-	return;
+function expandNode(g, open) {
 	var node = $(g.div).children('span');
 	var children = $(g.div).children('.children');
-	if (children.css('display') == 'block') {
+	var img = g.div.tree.treeImages;
+	var e = $(node).children('.expand');
+	if (!open) {
 		children.css('display', 'none');
-		$(node).children('.expand').html('+');
+		if (img)
+			e.attr('src', img.closed);
+		else
+			e.html('+');
 	} else {
 		children.css('display', 'block');
-		$(node).children('.expand').html('-');
+		if (img)
+			e.attr('src', img.opened);
+		else
+			e.html('-');
 	}
 }
 
-function createGroupDiv(g) {
-	var div = $('<div class="group"><span>' + 
-		'<span class="expand">&nbsp;</span>' + g.name + '&nbsp;' + 
+function expandCollapse(g) {
+	if (!g.children || g.children.length == 0)
+		return;
+
+	expandNode(g, $(g.div).children('.children').css('display') == 'none');
+}
+
+function createGroupDiv(g, tree) {
+	var div = $(
+		'<div class="group"><span>' + 
+		(tree.treeImages 
+			? '<img src="' + tree.treeImages.empty + '" class="expand"/>'
+			: '<span class="expand">&nbsp;</span>') +
+		g.name + '&nbsp;' + 
 		'<a href="#" class="new">new</a>&nbsp;' + 
 		'<a href="#" class="del">delete</a></span>' + 
 		'<div class="children"></div>');
-	g.div = div;
+	g.div = div[0];
 	div.data = g;
 	var node = $(div).children('span');
 	$(node).mouseover(function() { showLinks(g); });
@@ -80,14 +115,16 @@ function createGroup(pg, g, div) {
 	div.remove();
 	var name = $(div).children("input")[0].value;
 	var g = { name: name, parent: pg.id, id: null, children: [] };
-	div = createGroupDiv(g);
+	div = createGroupDiv(g, pg.div.tree);
 	g.div = div;
 	pg.children.push(g);
 	g.parentGroup = pg;
-	div.appendTo(pg.div.find('.children')[0]);
+	div.tree = pg.div.tree; 
+	div.appendTo($(pg.div).find('.children')[0]);
 
-	$(pg.div).children('span').children('.expand').html(
-		($(pg.div).children('.children').css('display') == 'none') ? '+' : '-');
+	expandNode(pg, true);
+	//$(pg.div).children('span').children('.expand').html(
+	//	($(pg.div).children('.children').css('display') == 'none') ? '+' : '-');
 
 	block('#tree', 0, 300);
 	$.ajax({
@@ -131,7 +168,7 @@ function startNewGroup(g) {
 	newGroup = { name: 'new group', parent: g.id, id: null };
 	var div = createNewGroupDiv(g, newGroup);
 	newGroup.div = div;
-	div.appendTo(g.div.find('.children')[0]);
+	div.appendTo($(g.div).find('.children')[0]);
 	$(g.div).children('.children').css('display', 'block');
 	//div.children('input')[0].focus();
 	return false;
@@ -145,7 +182,7 @@ function indexOf(a, o) {
 }
 
 function deleteGroup(g) {
-	g.div.remove();
+	$(g.div).remove();
 	if (g.parentGroup) {
 		g.parentGroup.children.splice(
 			indexOf(g.parentGroup.children, g), 1);
@@ -164,8 +201,6 @@ function deleteGroup(g) {
 		data: { id: g.id },
 		async: true,
 		success: function(data) {
-			//alert(data ? data.id : data);
-			//g.id = data.id;
 		},
 		error: function () { 
 			alert("error");
@@ -176,9 +211,11 @@ function deleteGroup(g) {
 }
 
 function createTree2(id, g) {
-	var div = createGroupDiv(g);
-	g.div = div;
+	var div = createGroupDiv(g, $(id)[0]);
+	div[0].tree = $(id)[0];
 	if (g.children) {
+		if (g.children.length > 0)
+			expandNode(g, false);
 		for (var i = 0; i < g.children.length; i++) {
 			createTree2(id, g.children[i]).appendTo(
 					$(div).children('.children'));
@@ -187,14 +224,17 @@ function createTree2(id, g) {
 	return div;
 }
 
-function createTree(id) {
+function createTree(id, images) {
 	var tree = [];
 	var t = [];
+	$(id)[0].treeImages = images; 
+	
 	for (var i = 0; i < groups.length; i++) {
 		var g = groups[i];
 		t[g.id] = g;
 		g.children = [];
 	}
+	
 	for (var i = 0; i < groups.length; i++) {
 		var g = groups[i];
 		if (g.parent == null) {
@@ -209,13 +249,14 @@ function createTree(id) {
 			g.parentGroup = pg;
 		}
 	}
+	
 	for (var i = 0; i < tree.length; i++) {
 		createTree2(id, tree[i]).appendTo($(id)[0]);
 	}
 }
 
 $(document).ready(function() {
-	createTree('#tree');
+	createTree('#tree', treeImages);
 });
 </script>
 {% endblock %}
