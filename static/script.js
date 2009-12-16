@@ -19,6 +19,11 @@ function reduce3(f, a1, a2, a3) {
 	return function() { return f(a1, a2, a3); };
 }
 
+function extend(ctor, obj) {
+	obj.constructor = ctor;
+	ctor.call(obj);
+}
+
 function block(el, t, to) {
 	var e = el != undefined ? $(el)[0] : document;
 	e.uiBlocked = true;

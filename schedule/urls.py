@@ -1,10 +1,24 @@
 from django.conf.urls.defaults import *
 #from views import hello, current_datetime, hours_ahead, contact
 from views import index, authsub, cal, calendar, events, event
+from views import filter
 from views import groups, groups_post, groups_delete, groups_put
 
-urlpatterns = patterns('',
-	(r'^$', index),
+filters = filter
+
+def filterViews(*p):
+	args = []
+	pp = []
+	for pattern in p:
+		if (not type(pattern) is str):
+			args.append((pattern[0], filter(pattern[1])))
+		else:
+			args.append(pattern)
+	return patterns(*args)
+
+urlpatterns = filterViews(
+	'',
+	(r'^$', index), #lambda request: filter(index, request)),
 	(r'^cal/$', cal),
 	(r'^calendar/$', calendar),
 	(r'^events/$', events),

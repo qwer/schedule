@@ -25,6 +25,7 @@ from google.appengine.ext import db
 
 from models import Group 
 import calendar
+from urlparse import parse_qsl, parse_qs
 
 def get_auth_sub_url(request):
 	next = 'http://%s/authsub/?url=%s' % (request.get_host(), request.get_full_path()) #META['SERVER_NAME']
@@ -236,7 +237,9 @@ def groups(request):
 		return groups_get(request)
 	if (request.method == 'POST'):
 		return groups_post(request)
-
+	if (request.method == 'PUT'):
+		return groups_put(request)
+	
 	return render_to_response('groups.html', locals())
 
 def groups_get(request):
@@ -303,21 +306,43 @@ def groups_delete(request):
 	deleteGroup(key)
 	return JsonResponse({})
 
+def GetParams(request):
+	if (request.method == 'GET' or request.method == "POST"):
+		return request.REQUEST
+	params = parse_qs(request.raw_post_data)
+	p = {}
+	for name in params:
+		p[name] = params[name][0]
+	return p
+		
 def groups_put(request):
-	if (not 'id' in request.REQUEST or not 'name' in request.REQUEST):
-		return JsonResponse({}, 400) 
-	id = request.REQUEST['id']
-	name = request.REQUEST['name']
+	try:
+		r = GetParams(request)
+	except Exception as e:
+		return JsonResponse(e.__str__())
+	
+	if (not 'id' in r or not 'name' in r):
+		return JsonResponse({}, 400)
+	
+	id = r['id']
+	name = r['name']
 	try:
 		key = db.Key(id)
 		group = Group.get(key)
-	except:
-		return JsonResponse({}, 404) 
+	except Exception as e:
+		return JsonResponse(e.__str__(), 404) 
 	
 	group.name = name
 	group.put()
-	return JsonResponse({}) 
+	return JsonResponse({})
 	
-	
-	
-	
+
+def filter(view):
+	def f(request):
+		user = users.get_current_user()
+		if (not user or not users.is_current_user_admin()):
+			return HttpResponse("access denied")
+		else:
+			return view(request)
+	return f
+
