@@ -317,25 +317,28 @@ def GetParams(request):
 		
 def groups_put(request):
 	try:
-		r = GetParams(request)
+		try:
+			r = GetParams(request)
+		except Exception as e:
+			return JsonResponse(e.__str__())
+		
+		if (not 'id' in r or not 'name' in r):
+			return JsonResponse({}, 400)
+		
+		id = r['id']
+		name = r['name']
+		try:
+			key = db.Key(id)
+			group = Group.get(key)
+		except Exception as e:
+			return JsonResponse(e.__str__(), 404) 
+		
+		group.name = name
+		group.put()
+		return JsonResponse({})
 	except Exception as e:
-		return JsonResponse(e.__str__())
-	
-	if (not 'id' in r or not 'name' in r):
-		return JsonResponse({}, 400)
-	
-	id = r['id']
-	name = r['name']
-	try:
-		key = db.Key(id)
-		group = Group.get(key)
-	except Exception as e:
-		return JsonResponse(e.__str__(), 404) 
-	
-	group.name = name
-	group.put()
-	return JsonResponse({})
-	
+		return JsonResponse(e.__str__()) 
+		
 
 def filter(view):
 	def f(request):
