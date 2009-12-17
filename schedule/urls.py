@@ -23,6 +23,7 @@ urlpatterns = filterViews(
 	(r'^calendar/$', calendar),
 	(r'^events/$', events),
 	(r'^event/$', event),
+	(r'^groups/([^/]+)/$', groups),
 	(r'^groups/$', groups),
 	(r'^groups_post/$', groups_post),
 	(r'^groups_put/$', groups_put),

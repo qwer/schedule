@@ -24,6 +24,13 @@ function extend(ctor, obj) {
 	ctor.call(obj);
 }
 
+function show(obj) {
+	var s = obj.toString() + "\n";
+	for (p in obj)
+		s += p + ": " + obj[p] + "\n";
+	alert(s);
+}
+
 function block(el, t, to) {
 	var e = el != undefined ? $(el)[0] : document;
 	e.uiBlocked = true;
@@ -34,7 +41,7 @@ function block(el, t, to) {
 		css: {
 			backgroundColor: 'inherit',
 	 		color: 'inherit',
-	 		border: 'none',
+	 		border: 'none'
 		},
 		fadeIn: t
 	};

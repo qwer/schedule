@@ -23,7 +23,7 @@ import atom
 from google.appengine.api import users
 from google.appengine.ext import db
 
-from models import Group 
+from models import Group, User
 import calendar
 from urlparse import parse_qsl, parse_qs
 
@@ -121,9 +121,9 @@ def authsub(request):
 
 
 def calendar(request):
-	if 'authsub_token' not in request.session:
-		authSubUrl = get_auth_sub_url(request)
-		return redirect(authSubUrl.__str__())
+	#if 'authsub_token' not in request.session:
+	#	authSubUrl = get_auth_sub_url(request)
+	#	return redirect(authSubUrl.__str__())
 	return render_to_response('calendar.html')
 
 def make_time(h, m):
@@ -228,13 +228,13 @@ def event(request):
 	return JsonResponse('GET')
 
 
-def groups(request):
+def groups(request, id=None):
 	user = users.get_current_user()
 	if (not user or not users.is_current_user_admin()):
 		return redirect('/')
 
 	if (request.method == 'GET'):
-		return groups_get(request)
+		return groups_get(request, id)
 	if (request.method == 'POST'):
 		return groups_post(request)
 	if (request.method == 'PUT'):
@@ -242,17 +242,23 @@ def groups(request):
 	
 	return render_to_response('groups.html', locals())
 
-def groups_get(request):
+def groups_get(request, id):
 	cleanGroups()
 	#group = Group(name='new group', parentGroup=None, calendarId="calId") 
 	#group.put()
-	groupsQuery = db.GqlQuery('SELECT * FROM Group')
-	groups_json = []
+	
+	if id:
+		groupsQuery = db.GqlQuery('SELECT * FROM Group WHERE parentGroup = :1', db.Key(id))
+	else:
+		groupsQuery = db.GqlQuery('SELECT * FROM Group')
+
+		groups_json = []
 	groups = []
 	for g in groupsQuery.fetch(1000):
 		gg = {}
 		gg['name'] = g.name
 		gg['id'] = g.key().__str__()
+		gg['type'] = g.__class__.__name__.lower()
 		try:
 			if g.parentGroup:
 				gg['parent'] = g.parentGroup.key().__str__()
@@ -261,9 +267,11 @@ def groups_get(request):
 		except Exception:
 			continue	
 		groups.append(gg)
-
-	groups_json = simplejson.dumps(groups)
 	
+	if id:
+		return JsonResponse(groups)
+	
+	groups_json = simplejson.dumps(groups)
 	t = get_template('groups.html')
 	html = t.render(Context({'groups': groups, 'groups_json': groups_json,}))
 	return HttpResponse(html)
@@ -271,13 +279,17 @@ def groups_get(request):
 def groups_post(request):
 	name = request.REQUEST['name']
 	parentId = request.REQUEST['id']
+	type = request.REQUEST['type'] if ('type' in request.REQUEST) else 'group'
 	# XXX errors
 	#parentGroupQuery = Group.gql('WHERE __key__ = :1', parentId)
 	if (parentId == None or parentId.__len__() == 0):
 		key = None
 	else:
 		key = db.Key(parentId)
-	group = Group(name=name, parentGroup=key, calendarId="calId") 
+	if (type == 'group'):
+		group = Group(name=name, parentGroup=key, calendarId="calId")
+	elif (type == 'user'):  
+		group = User(name=name, parentGroup=key, calendarId="calId")
 	key = group.put()
 	return JsonResponse({'id' : key.__str__() })
 
@@ -341,11 +353,11 @@ def groups_put(request):
 		
 
 def filter(view):
-	def f(request):
+	def f(request, *args):
 		user = users.get_current_user()
 		if (not user or not users.is_current_user_admin()):
 			return HttpResponse("access denied")
 		else:
-			return view(request)
+			return view(request, *args)
 	return f
 
