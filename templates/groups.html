@@ -49,6 +49,8 @@ img.expand {
 
 .children { display: none; }
 
+.drop-hover1 { font-size: 2em; color: #cdf; }
+
 </style>
 <script src="/static/jquery.js" type="text/javascript"></script>
 <script src="/static/jqueryUI.js" type="text/javascript"></script>
@@ -61,7 +63,7 @@ var treeImages = {
 	closed: '/static/tree_closed.gif',
 	empty:  '/static/tree_white.gif',
 	group:  '/static/folder.gif',
-	user:	'/static/user.png',
+	user:	'/static/user2.png',
 	loading:'/static/wait.gif'
 };
 
@@ -73,12 +75,21 @@ function Tree(div) {
 	this.selectedGroup = null;
 	this.nodes = [];
 	this.div = div;
+	this.selectListeners = [];
+	this.nodeSelected = function (listener) {
+		this.selectListeners.push(listener);
+	}
+	this.fireSelect = function () {
+		for (var i = 0; i < this.selectListeners.length; i++)
+			this.selectListeners[i](this.selectedGroup);
+	}
 }
 
 var tree = null;
 
 function displayLinks(g, d) {
-	g.node().children('.links').css('display', d);
+	if (!g.div.dropping)
+		g.node().children('.links').css('display', d);
 }
 
 function showLinks(g) {
@@ -90,12 +101,12 @@ function hideLinks(g) {
 }
 
 function nodeMouseover(g) {
-	if (!g.selected)
+	if (!g.selected && !g.div.dropping)
 		g.nodeName().css('background-color', '#eee');
 }
 
 function nodeMouseout(g) {
-	if (!g.selected)
+	if (!g.selected && !g.div.dropping)
 		g.nodeName().css('background-color', '#fff');
 }
 
@@ -105,13 +116,16 @@ function selectGroup(g) {
 		g.tree.selectedGroup.nodeName().css('background-color', 'inherit');
 		g.tree.selectedGroup.selected = false;
 	}
+	var fire = g != g.tree.selectedGroup;
 	g.tree.selectedGroup = g;
 	g.selected = true;
 	g.nodeName().css('background-color', '#cdf');
+	if (fire)
+		g.tree.fireSelect();
 }
 
 function expandNode2(g, open) {
-	var node = $(g.div).children('span');
+	var node = g.node();
 	var children = $(g.div).children('.children');
 	var img = g.tree.treeImages;
 	var e = $(node).children('.expand');
@@ -178,24 +192,28 @@ function expandCollapse(g) {
 	expandNode(g, $(g.div).children('.children').css('display') == 'none');
 }
 
+function Ev() {
+	this.listeners = [];
+}
+
 function Group() {
 	this.node = function () {
-		return $(this.div).children('span');
+		return $(this.div).children('.node');
 	}
 	this.nodeName = function () {
-		return $(this.div).children('span').children('.name');
+		return $(this.div).children('.node').children('.name');
 	}
 	this.expandImage = function () {
-		return $(this.div).children('span').children('.expand');
+		return $(this.div).children('.node').children('.expand');
 	}
 	this.nodeIcon = function () {
-		return $(this.div).children('span').children('.icon');
+		return $(this.div).children('.node').children('.icon');
 	}
 }
 
 function createGroupDiv(g) {
 	var div = $(
-		'<div class="group"><span>' + 
+		'<div class="group"><div class="node">' + 
 		(g.tree.treeImages 
 			? '<img src="' + (!g.loaded
 					? g.tree.treeImages.closed 
@@ -204,17 +222,38 @@ function createGroupDiv(g) {
 			: '<span class="expand">&nbsp;</span>') +
 		'<img class="icon"/>' +
 		'<span class="name">' + g.name + '</span>' +
-		//'<span class="links">' + 
-		//'<a href="#" class="new">new</a>&nbsp;' + 
-		//'<a href="#" class="del">delete</a>&nbsp;' + 
-		//'<a href="#" class="rename">rename</a></span>' 
-		'</span>' + 
+		'</div>' + 
 		'<div class="children"></div></div>');
 	g.div = div[0];
-	div.data = g;
+	div[0].data = g;
 	extend(Group, g);
-	
 	var node = g.node();
+	if (g.tree.dndEnabled) {
+		node.draggable({
+			revert: true,
+			zIndex: 1000,
+			//cursorAt: { left: 0, top: 0 },
+			distance: 10,
+			opacity: 0.5,
+			helper: 'clone'
+		});
+		node.droppable({
+			hoverClass: 'drop-hover',
+	    	over: function(event, ui) {
+	    		$(this).parent().dropping = true;
+	    		$(this).children('.name').css('background-color', '#128');
+			},
+			out: function(event, ui) {
+				$(this).parent().dropping = false;
+	    		$(this).children('.name').css('background-color', '#fff');
+			},
+			drop: function(event, ui) {
+				var pdiv = ui.draggable.parent()[0];
+				var gg = pdiv.data;
+				moveGroup(gg, g)
+			}
+	    });
+	}
 	var links = $('.groupLinks').clone();
 	links.removeClass('groupLinks');
 	links.appendTo(node);
@@ -237,6 +276,17 @@ function createGroupDiv(g) {
 				g.tree.treeImages[g.type == undefined ? 'group' : g.type]);
 	
 	return div;
+}
+
+function moveGroup(g, pg) {
+	expandNode(g, true, function() {
+		removeGroup(g);
+		pg.children.push(g);
+		g.parentGroup = pg;
+		
+		$(g.div).remove();
+		$(g.div).appendTo($(pg.div).children('.children')[0]); 
+	});
 }
 
 function createGroup(pg, g, div) {
@@ -279,7 +329,8 @@ function cancelNewGroup(ng) {
 
 function createNewGroupDiv(g, ng) {
 	var div = $('<div class="group">' + 
-		'<img src="/static/tree_white.gif"/><img src="/static/tree_white.gif"/>' + 
+		'<img class="expand" src="' + g.tree.treeImages.empty + '"/>' + 
+		'<img class="icon"/>' + 
 		'<input type="text" value="' + ng.name + '"/>&nbsp;' + 
 		'<a href="#"><img src="/static/save.gif" align="center"/></a>&nbsp;' + 
 		'<a href="#"><img src="/static/delete.gif" align="center"/></a></div>');
@@ -287,6 +338,9 @@ function createNewGroupDiv(g, ng) {
 	$(div.find('a')[1]).click(reduce3(cancelNewGroup, ng));
 	div.data = ng;
 	ng.div = div;
+	if (g.tree.treeImages) 
+		$(div).find('.icon').attr('src', 
+				ng.tree.treeImages[ng.type == undefined ? 'group' : ng.type]);
 	return div;
 }
 
@@ -315,7 +369,6 @@ function startNewGroup(g, type) {
 	return false;
 }
 
-
 function indexOf(a, o) {
 	for (var i = 0; i < a.length; i++)
 		if (a[i] == o)
@@ -323,22 +376,25 @@ function indexOf(a, o) {
 	return -1;
 }
 
-function deleteGroup(g) {
-	$(g.div).remove();
+function removeGroup(g) {
 	if (g.parentGroup) {
 		g.parentGroup.children.splice(
 			indexOf(g.parentGroup.children, g), 1);
 
-		if (g.parentGroup.children.length <= 0)
-
-		var img = g.tree.treeImages;
-		var exp = g.parentGroup.expandImage();
-		if (img)
-			exp.attr('src', img.empty); 
-		else
-			exp.html('&nbsp;');
+		if (g.parentGroup.children.length <= 0) {	
+			var img = g.tree.treeImages;
+			var exp = g.parentGroup.expandImage();
+			if (img)
+				exp.attr('src', img.empty); 
+			else
+				exp.html('&nbsp;');
+		}
 	}
+}
 
+function deleteGroup(g) {
+	$(g.div).remove();
+	removeGroup(g);
 	block(g.tree.div, 0, 300);
 	$.ajax({
 		url: '/groups_delete/',
@@ -387,7 +443,7 @@ function cancelRenameGroup(g) {
 function json(method, url, obj, success, error, complete) {
 	return $.ajax({
 		url: url,
-		type: method, 
+		type: method,
 		cache: false,
 		dataType: 'json',
 		data: obj,
@@ -406,15 +462,11 @@ function jsonPut(url, obj, success, error, complete) {
 	return json('PUT', url, obj, success, error, complete);
 }
 
-function renameGroup(g) {
-	var name = $(g.div).find('#newname')[0].value;
-	g.name = name;
-	$(g.div).children('span').children('.name').html(g.name);
-	
+function saveGroup(g) {
 	block(g.tree.div, 0, 300);
 	jsonGet(
 		'/groups_put/',
-		{ id: g.id, name: g.name },
+		{ id: g.id, name: g.name, email: g.email, calId: g.calId },
 		function (data) {
 			//show(data);
 		},
@@ -423,7 +475,18 @@ function renameGroup(g) {
 		},
 		reduce2(unblockElement, g.tree.div, 0)
 	);
+}
+
+function renameGroup(g) {
+	var name = $(g.div).find('#newname')[0].value;
+	g.name = name;
+	g.node().children('.name').html(g.name);
+	saveGroup(g);
 	return false;
+}
+
+function saveSelectedGroup(tree) {
+	saveGroup(tree.selectedGroup);
 }
 
 function createTree2(id, g) {
@@ -480,8 +543,53 @@ function createTree(groups, id, images) {
 	return tree;
 }
 
+var currentInfo = null;
+
+function showInfo(info) {
+	if (currentInfo != info[0]) {
+		if (currentInfo != null)
+			$(currentInfo).css('display', 'none');
+		info.css('display', 'inherit');
+		currentInfo = info[0];
+	}
+}
+
+function showUser(u) {
+	var info = $('#user-info');
+	info.find('#user-name').html(u.name);
+	info.find('#user-account').attr('value', u.email ? u.email : "");
+	info.find('#user-calendar').attr('value', u.calId ? u.calId : "");
+	showInfo(info);
+}
+
+function showGroup(g) {
+	var info = $('#group-info');
+	info.find('#group-name').html(g.name);
+	info.find('#group-calendar').attr('value', g.calId);
+	showInfo(info);
+}
+
+function groupSelected(g) {
+	if (g.type == 'user')
+		showUser(g);
+	else
+		showGroup(g);
+}
+
+function saveUser(tree) {
+	var g = tree.selectedGroup;
+	var info = $('#user-info');
+	g.name = info.find('#user-name').html();
+	g.email = info.find('#user-account').attr('value');
+	g.calId = info.find('#user-calendar').attr('value');
+	saveSelectedGroup(tree);
+}
+
 $(document).ready(function() {
 	tree = createTree(groups, '#tree', treeImages);
+	tree.nodeSelected(groupSelected);
+	var info = $('#user-info');
+	info.find('#user-submit').click(reduce(saveUser, tree));
 });
 </script>
 {% endblock %}
@@ -492,12 +600,31 @@ $(document).ready(function() {
 	<a href="#" class="rename"><img src="/static/edit.png" title="edit" align="bottom"/></a>
 	<a href="#" class="del"><img src="/static/delete.gif"  title="delete"/></a> 
 	<a href="#" class="new"><img src="/static/folder.gif"  title="new group"/></a>
-	<a href="#" class="new-user"><img src="/static/user.png"    title="new user"/></a>
+	<a href="#" class="new-user"><img src="/static/add-user-icon.png"title="new user"/></a>
 	<a href="#" class="new"></a>
 </span>
 
-<div id="tree"></div>
-<div id="tree2"></div>
+<table border="1" width="100%" height="100%">
+<tr>
+	<td >
+		<div id="tree"></div>
+	</td>
+	<td width="60%">
+		<div id="info">
+			<div id="user-info" style="display:none;">
+				<table><tr><td>user</td><td><span id="user-name"></span></td></tr>
+				<tr><td>e-mail</td><td><input type="text" id="user-account"/></td></tr>
+				<tr><td>calendar</td><td><input type="text" id="user-calendar"/></td></tr>
+				<tr><td></td><td><input type="submit" value="Save" id="user-submit"/></td></tr></table>
+			</div>
+			<div id="group-info" style="display:none;">
+				name <span id="group-name"></span><br/>
+				calendar <input type="text" id="group-calendar"/>
+			</div>
+		</div>
+	</td>
+</tr>
+</table>
 
 <br/><br/>
 

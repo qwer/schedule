@@ -4,12 +4,9 @@
 	</head>
 	<body>
 	<div>{{user_name}}&nbsp;<a href="{{logout_url}}">logout</a></div>
+	<a href="/calendar/">calendar</a>
 	{% if is_admin %}
 	<div>
-		<a href="/group/create">create group</a>
-		{% for g in groups %}
-				
-		{% endfor %}
 	</div>
 	{% endif %}
 	<!-- <a href="{{ authSubUrl }}">Login to your Google account</a> -->

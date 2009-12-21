@@ -5,6 +5,8 @@ from django.shortcuts import render_to_response, redirect
 from django.utils import simplejson
 from django import forms
 from pickle import dumps
+from calendar import Calendar
+from gdata.calendar.service import CalendarService
 #from calendar import calendar
 import datetime
 import time
@@ -23,7 +25,7 @@ import atom
 from google.appengine.api import users
 from google.appengine.ext import db
 
-from models import Group, User
+from models import Group, User, SystemAccount
 import calendar
 from urlparse import parse_qsl, parse_qs
 
@@ -45,7 +47,6 @@ def index(request):
 	else:
 		return redirect(users.create_login_url('/'))
 
-		
 def cal(request):
 	if 'logout' in request.GET:
 		del request.session['authsub_token']
@@ -93,7 +94,7 @@ def authsub(request):
 		request.session["authsub_token"] = calendar_service.GetAuthSubToken()
 		#return HttpResponse("Ok: token " + request.session["authsub_token"])
 	return redirect(request.REQUEST['url'])
-		
+	
 	#for i in range(1, 10):
 	#	create_calendar(calendar_service)
 	calendar = calendar_service.GetCalendarListFeed().entry[1]
@@ -110,21 +111,71 @@ def authsub(request):
 	#feed = calendar_service.GetCalendarEventFeed(uri)
 	return render_to_response('authsub.html', { 'feed': feed, 'event': event })
 
-"""	<ul>
-	{% for a_when in cal.when %}
-    	<li>Start: {{a_when.start_time}}<br/>
-    		End: {{a_when.end_time}}<br/>  		
-    	</li>
-    {% endfor %}
-	</ul>
-"""
+def getAppUser(user=None):
+	if not user:
+		user = users.get_current_user()
+	gql = User.all().filter('account =', user)
+	for u in gql.fetch(1):
+		return u
+	return None
 
-
+def getCalendarService2(request, sa):
+	cs = gdata.calendar.service.CalendarService()
+	if 'auth_token' in request.session:
+		cs.SetAuthSubToken(request.session['auth_token'])
+		return cs
+	
+	cs.email = sa.email
+	cs.password = sa.password
+	cs.source = 'Google-Calendar_Python_Sample-1.0' # ???
+	try:
+		cs.ProgrammaticLogin()
+		request.session["auth_token"] = cs.GetAuthSubToken()
+		return cs
+	except Exception, e:
+		raise e
+		return None
+	
+def calendars(request):
+	if not 'id' in request.REQUEST:
+		return redirect('/')
+	id = request.REQUEST['id']
+	user = getAppUser()
+	user.calendarId = id if id.strip().__len__() > 0 else None
+	user.put()
+	return JsonResponse("Ok")
+	
 def calendar(request):
-	#if 'authsub_token' not in request.session:
-	#	authSubUrl = get_auth_sub_url(request)
-	#	return redirect(authSubUrl.__str__())
-	return render_to_response('calendar.html')
+	user = getAppUser()
+	sa = getSystemAccount()
+	if not user or not sa:
+		return redirect('/')
+	
+	if 'authsub_token' not in request.session:
+		authSubUrl = get_auth_sub_url(request)
+		return redirect(authSubUrl.__str__())
+	cs = getCalendarService(request)
+	if not cs:
+		return redirect('/')
+	
+	if not user.calendarId:
+		feed = cs.GetCalendarListFeed()
+		calendars = []
+		for e in feed.entry:
+			c = {}
+			c['id'] = str(e.GetEventFeedLink()) #str(e.GetEditLink().href)
+			c['name'] = str(e.title.text)
+			calendars.append(c)
+		#return HttpResponse(simplejson.dumps(calendars))
+	else:
+		calendars = None
+	"""else:
+		try:
+			cs = getCalendarService2(request, sa)
+		except Exception as e:
+			return redirect('/' + e.__str__())
+	"""
+	return render_to_response('calendar.html', {'calendars': simplejson.dumps(calendars)})
 
 def make_time(h, m):
 	return { 'hours': h, 'minutes': m }
@@ -147,14 +198,14 @@ def events(request):
 		dates.append({ 'year': d.year, 'month': d.month, 'day': d.day }) 
 		d += datetime.timedelta(days=1)
 		
-	return HttpResponse(simplejson.dumps(
-		{ 'places'	: 'L1 L2 L3 L4 478 479',
-		  'times'	: times,
-		  'dates'	: dates }),
-		mimetype="application/json")	
-
+	return JsonResponse({ 
+		'places': 'L1 L2 L3 L4 478 479',
+		'times'	: times,
+		'dates'	: dates
+	})
 
 def InsertSingleEvent(calendar_service,
+					calendar,
 					title='One-time Tennis with Beth', 
 					content='Meet for a quick lesson',
 					where='On the courts', 
@@ -170,7 +221,10 @@ def InsertSingleEvent(calendar_service,
 		end_time   = time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime(time.time() + 3600))
 	event.when.append(gdata.calendar.When(start_time=start_time, end_time=end_time))
 
-	new_event = calendar_service.InsertEvent(event, '/calendar/feeds/default/private/full')
+	new_event = calendar_service.InsertEvent(event, calendar)
+					#'/calendar/feeds/gmc2jrirg1850pg1b102n9e56g@group.calendar.google.com/private/full')
+					#'/calendar/feeds/default/allcalendars/full') 
+					#calendar) #'/calendar/feeds/default/private/full')
     
 	print 'New single event inserted: %s' % (new_event.id.text,)
 	print '\tEvent edit URL: %s' % (new_event.GetEditLink().href,)
@@ -181,7 +235,7 @@ def InsertSingleEvent(calendar_service,
 def JsonResponse(object, status=200):
 	return HttpResponse(simplejson.dumps(object),
 			mimetype="application/json",
-			status= status)
+			status=status)
 
 class DateTime:
 	def __init__(self, date, hour, minute):
@@ -201,11 +255,21 @@ def nth_index(str, sub, n):
 		#	return -1
 	return i - 1
 
+def getCalendarService(request):
+	calendar_service = gdata.calendar.service.CalendarService()
+	calendar_service.SetAuthSubToken(request.session["authsub_token"])
+	return calendar_service
+
 def event(request):
+	user = getAppUser()
+	if not user or not user.calendarId:
+		return JsonResponse(None, 400)
+	
+	r = GetParams(request)
 	if request.method == 'GET':
-		name  = request.REQUEST['name']
-		where = request.REQUEST['where']
-		when  = request.REQUEST['when']
+		name  = r['name']
+		where = r['where']
+		when  = r['when']
 		i = nth_index(when, "-", 3)
 		start = datetime.datetime.strptime(when[0:i], '%Y-%m-%d  %H:%M')
 		end = datetime.datetime.strptime(when[i + 1:], '%H:%M') 
@@ -215,18 +279,19 @@ def event(request):
 		end   = end.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 		event = None
 		#try:
-		calendar_service = gdata.calendar.service.CalendarService()
-		calendar_service.SetAuthSubToken(request.session["authsub_token"])
-		event = InsertSingleEvent(calendar_service, name, '', where, start, end)
-		#except Exception as err:
-		#	return JsonResponse(err.__str__())
+		calendar_service = getCalendarService(request)
+		try:
+			cal = user.calendarId[len('http://www.google.com'):]
+			event = InsertSingleEvent(calendar_service,
+					user.calendarId, name, '', where, start, end)
+		except Exception , err:
+			return JsonResponse(cal + ' ' + err.__str__())
 		
 		return JsonResponse(
 			{ 'id': event.id.text, 'name': name, 'when': when, 'where': where })
 	if request.method == 'PUT':
 		pass
-	return JsonResponse('GET')
-
+	return JsonResponse(request.method)
 
 def groups(request, id=None):
 	user = users.get_current_user()
@@ -243,38 +308,27 @@ def groups(request, id=None):
 	return render_to_response('groups.html', locals())
 
 def groups_get(request, id):
-	cleanGroups()
-	#group = Group(name='new group', parentGroup=None, calendarId="calId") 
-	#group.put()
-	
+	#cleanGroups()
+	query = Group.all()
 	if id:
-		groupsQuery = db.GqlQuery('SELECT * FROM Group WHERE parentGroup = :1', db.Key(id))
-	else:
-		groupsQuery = db.GqlQuery('SELECT * FROM Group')
-
-		groups_json = []
+		query = query.filter('parentGroup =', db.Key(id)) # XXX exceptions
+	query.order('name')
+	
+	groups_json = []
 	groups = []
-	for g in groupsQuery.fetch(1000):
-		gg = {}
-		gg['name'] = g.name
-		gg['id'] = g.key().__str__()
-		gg['type'] = g.__class__.__name__.lower()
+	for g in query.fetch(1000):
+		gg = g.json()
 		try:
-			if g.parentGroup:
-				gg['parent'] = g.parentGroup.key().__str__()
-			else:
-				gg['parent'] = None
+			gg['parent'] = g.parentGroup.key().__str__() if g.parentGroup else None
 		except Exception:
-			continue	
+			continue
 		groups.append(gg)
 	
 	if id:
 		return JsonResponse(groups)
 	
 	groups_json = simplejson.dumps(groups)
-	t = get_template('groups.html')
-	html = t.render(Context({'groups': groups, 'groups_json': groups_json,}))
-	return HttpResponse(html)
+	return render_to_response('groups.html', {'groups': groups, 'groups_json': groups_json,})
 
 def groups_post(request):
 	name = request.REQUEST['name']
@@ -287,9 +341,9 @@ def groups_post(request):
 	else:
 		key = db.Key(parentId)
 	if (type == 'group'):
-		group = Group(name=name, parentGroup=key, calendarId="calId")
-	elif (type == 'user'):  
-		group = User(name=name, parentGroup=key, calendarId="calId")
+		group = Group(name=name, parentGroup=key, calendarId=None)
+	elif (type == 'user'):
+		group = User(name=name, parentGroup=key, calendarId=None)
 	key = group.put()
 	return JsonResponse({'id' : key.__str__() })
 
@@ -331,8 +385,8 @@ def groups_put(request):
 	try:
 		try:
 			r = GetParams(request)
-		except Exception as e:
-			return JsonResponse(e.__str__())
+		except:# Exception as e:
+			return JsonResponse(sys.exc_info()[0].__str__())
 		
 		if (not 'id' in r or not 'name' in r):
 			return JsonResponse({}, 400)
@@ -342,22 +396,56 @@ def groups_put(request):
 		try:
 			key = db.Key(id)
 			group = Group.get(key)
-		except Exception as e:
-			return JsonResponse(e.__str__(), 404) 
-		
+			if (group.type() == 'user'):
+				if ('email' in r):
+					group.account = users.User(r['email'])
+		except: # Exception as e:
+			return JsonResponse(sys.exc_info()[0].__str__(), 404) 
+		if 'calId' in r:
+			group.calendarId = r['calId'].strip() if r['calId'].strip().__len__() > 0 else None
 		group.name = name
 		group.put()
 		return JsonResponse({})
-	except Exception as e:
-		return JsonResponse(e.__str__()) 
-		
+	except:# Exception as e:
+		return JsonResponse(sys.exc_info()[0].__str__()) 
 
+def getSystemAccount():
+	try:
+		sa = SystemAccount.all()
+		for a in sa.fetch(1):
+			return a
+		return None
+	except:
+		return None
+
+def systemAccount(request):
+	user = users.get_current_user()
+	if not user or not users.is_current_user_admin():
+		return redirect('/')
+	
+	sa = getSystemAccount()
+	if 'email' in request.REQUEST and 'password' in request.REQUEST:
+		if not sa:
+			sa = SystemAccount(email=request.REQUEST['email'],
+						password=request.REQUEST['password'])
+		else:
+			sa.email = request.REQUEST['email']
+			sa.password = request.REQUEST['password']
+		sa.put()
+	return render_to_response('systemAccount.html', locals())
+	
 def filter(view):
 	def f(request, *args):
-		user = users.get_current_user()
-		if (not user or not users.is_current_user_admin()):
-			return HttpResponse("access denied")
-		else:
-			return view(request, *args)
+		#user = users.get_current_user()
+		#if (not user or not users.is_current_user_admin()):
+		#	return HttpResponse("access denied")
+		#else:
+		return view(request, *args)
 	return f
 
+def clearSession(request):
+	for key in request.session.keys():
+		del request.session[key]
+	request.session.clear()
+	return redirect('/')
+	
