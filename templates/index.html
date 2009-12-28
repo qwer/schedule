@@ -1,14 +1,19 @@
-<html>
-	<head>
-		<meta name="google-site-verification" content="UQrMmUp4dtaJikSvY4ZH_HjcmYXhnt3s1c1YqXRvJec" />
-	</head>
-	<body>
-	<div>{{user_name}}&nbsp;<a href="{{logout_url}}">logout</a></div>
+{% extends "base.html" %}
+
+{% block doctitle %}Index{% endblock %}
+{% block title %}Index{% endblock %}
+
+{% block head %}
+	<meta name="google-site-verification" content="UQrMmUp4dtaJikSvY4ZH_HjcmYXhnt3s1c1YqXRvJec" />
+{% endblock %}
+
+
+{% block content %}
 	<a href="/calendar/">calendar</a>
-	{% if is_admin %}
+	{% if isAdmin %}
 	<div>
+		<a href="/groups/">groups</a>
 	</div>
 	{% endif %}
 	<!-- <a href="{{ authSubUrl }}">Login to your Google account</a> -->
-	</body> 
-</html>
+{% endblock %}

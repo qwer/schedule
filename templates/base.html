@@ -5,9 +5,10 @@
  	{% block head %}{% endblock %}
 </head>
 <body>
-    <h1>{% block title %}{% endblock %}</h1>
-    {% block content %}{% endblock %}
-    {% block footer %}{% endblock %}
+	<div align="right">{{userName}}&nbsp;<a href="{{logoutUrl}}">logout</a></div>
+	<h1>{% block title %}{% endblock %}</h1>
+	{% block content %}{% endblock %}
+	{% block footer %}{% endblock %}
 </body>
 </html>
 

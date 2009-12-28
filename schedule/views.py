@@ -1,5 +1,5 @@
 from django.http import HttpResponse, Http404
-from django.template import Template, Context
+from django.template import Template, Context, RequestContext
 from django.template.loader import get_template
 from django.shortcuts import render_to_response, redirect
 from django.utils import simplejson
@@ -43,7 +43,9 @@ def index(request):
 		user_name = user.nickname()
 		is_admin = users.is_current_user_admin()
 		logout_url = users.create_logout_url('/')
-		return render_to_response('index.html', locals())
+		return render_to_response('index.html', 
+			context_instance=RequestContext(request))
+			#locals())
 	else:
 		return redirect(users.create_login_url('/'))
 
@@ -175,7 +177,12 @@ def calendar(request):
 		except Exception as e:
 			return redirect('/' + e.__str__())
 	"""
-	return render_to_response('calendar.html', {'calendars': simplejson.dumps(calendars)})
+	groups = getGroups(None)
+	groups_json = simplejson.dumps(groups)
+	return render_to_response('calendar.html',
+		{'groups': groups, 'groups_json': groups_json, 
+		 'calendars': simplejson.dumps(calendars)},
+			context_instance=RequestContext(request))
 
 def make_time(h, m):
 	return { 'hours': h, 'minutes': m }
@@ -203,6 +210,42 @@ def events(request):
 		'times'	: times,
 		'dates'	: dates
 	})
+
+def getCalId(str):
+	s = '/calendar/feeds/'
+	str = str[len(s) + str.index(s):]
+	return str.split('/')
+
+def getEvents(cs, calId, startDate, endDate):
+	a = getCalId(calId)
+	query = gdata.calendar.service.CalendarEventQuery(a[0], a[1], a[2])
+	query.start_min = startDate.strftime('%Y-%m-%d')
+	query.start_max = endDate.strftime('%Y-%m-%d')
+	return cs.CalendarQuery(query)
+
+def events2(request):
+	user = getAppUser()
+	if not user or not user.calendarId:
+		return JsonResponse(None, 400)
+	
+	r = GetParams(request)
+	if 'start' in r:
+		startDate = datetime.datetime.strptime(r['start'], '%Y-%m-%d')
+	else:
+		startDate = datetime.datetime.now()
+		startDate -= datetime.timedelta(startDate.date().weekday())
+	
+	endDate = startDate + datetime.timedelta(days=7)
+	
+	calendarService = getCalendarService(request)
+	feed = getEvents(calendarService, user.calendarId, startDate, endDate) 
+	s = ''
+	for i, event in enumerate(feed.entry):
+		s += '\t%s. %s\n' % (i, event.title.text,)
+		for when in event.when:
+			s += '\t\tStart time: %s\n' % (when.start_time,)
+			s += '\t\tEnd time:   %s\n' % (when.end_time,)
+	return HttpResponse(s)
 
 def InsertSingleEvent(calendar_service,
 					calendar,
@@ -305,16 +348,13 @@ def groups(request, id=None):
 	if (request.method == 'PUT'):
 		return groups_put(request)
 	
-	return render_to_response('groups.html', locals())
+	return render_to_response('groups.html',context_instance=RequestContext(request))
 
-def groups_get(request, id):
-	#cleanGroups()
+def getGroups(id):
 	query = Group.all()
 	if id:
 		query = query.filter('parentGroup =', db.Key(id)) # XXX exceptions
 	query.order('name')
-	
-	groups_json = []
 	groups = []
 	for g in query.fetch(1000):
 		gg = g.json()
@@ -323,12 +363,18 @@ def groups_get(request, id):
 		except Exception:
 			continue
 		groups.append(gg)
-	
+	return groups
+
+def groups_get(request, id):
+	#cleanGroups()
+	groups = getGroups(id)
 	if id:
 		return JsonResponse(groups)
 	
 	groups_json = simplejson.dumps(groups)
-	return render_to_response('groups.html', {'groups': groups, 'groups_json': groups_json,})
+	return render_to_response('groups.html',
+		{'groups': groups, 'groups_json': groups_json},
+		context_instance=RequestContext(request))
 
 def groups_post(request):
 	name = request.REQUEST['name']
@@ -355,7 +401,6 @@ def cleanGroups():
 				db.get(g.parentGroup.key())
 		except:
 			g.delete()
-
 
 def deleteGroup(id):
 	db.get(id).delete()
@@ -448,4 +493,4 @@ def clearSession(request):
 		del request.session[key]
 	request.session.clear()
 	return redirect('/')
-	
+
