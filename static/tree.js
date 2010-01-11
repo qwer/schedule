@@ -377,28 +377,6 @@ function cancelRenameGroup(g) {
 	 return false;
 }
 
-function json(method, url, obj, success, error, complete) {
-	return $.ajax({
-		url: url,
-		type: method,
-		cache: false,
-		dataType: 'json',
-		data: obj,
-		async: true,
-		success: success,
-		error: error,
-		complete: complete
-	});
-}
-
-function jsonGet(url, obj, success, error, complete) {
-	return json('GET', url, obj, success, error, complete);
-}
-
-function jsonPut(url, obj, success, error, complete) {
-	return json('PUT', url, obj, success, error, complete);
-}
-
 function saveGroup(g) {
 	block(g.tree.div, 0, 300);
 	jsonGet(
@@ -443,7 +421,7 @@ function createTree2(id, g) {
 }
 
 function createTree1(groups, tree) {
-	var t = [];
+	var t = {};
 	for (var i = 0; i < groups.length; i++) {
 		var g = groups[i];
 		t[g.id] = g;
@@ -468,6 +446,7 @@ function createTree1(groups, tree) {
 			g.parentGroup = pg;
 		}
 	}
+	return t;
 }
 
 function createTree(groups, id, images, readOnly) {
@@ -486,17 +465,20 @@ function createTree(groups, id, images, readOnly) {
 function createList2(select, g, n) {
 	var padding = "";
 	for (var i = 0; i < n; i++)
-		padding += "&nbsp;&nbsp;";
-	$('<option>' + padding + g.name + '</option>').appendTo(select);
+		padding += "&nbsp;";
+	var opt = $('<option>' + padding + g.name + '</option>');
+	opt.appendTo(select);
+	opt.attr('value', g.id);
 	if (g.children)
 		for (var i = 0; i < g.children.length; i++)
-			createList2(select, g.children[i], n + 2);
+			createList2(select, g.children[i], n + 4);
 }
 
 function createList(id, groups, images) {
 	var select = $(id)[0];
 	var tree = { nodes: [] };
-	createTree1(groups, tree);
+	var g = createTree1(groups, tree);
 	for (var i = 0; i < tree.nodes.length; i++)
 		createList2(select, tree.nodes[i], 0);
+	return g;
 }

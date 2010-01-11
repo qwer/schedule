@@ -11,18 +11,27 @@ class Group(PolyModel):
 		return self.__class__.__name__.lower()
 	
 	def json(self):
-		return { 
+		return {
 			'name':  self.name, 
 			'id':    self.key().__str__(),
 			'type':  self.type(),
 			'calId': self.calendarId 
 		} 
+		
+	def getAllChildren(self):
+		children = [self]
+		query = Group.all().filter('parentGroup =', self)
+		for g in query.fetch(10000):
+			children.extend(g.getAllChildren())
+		return children
 
 class Place(Group):
 	pass
 	
 class User(Group):
 	account		= db.UserProperty()
+	timezone	= db.IntegerProperty()
+	
 	def json(self):
 		return { 
 			'name':  self.name, 
@@ -38,7 +47,4 @@ class User2(BaseModel):
 class SystemAccount(BaseModel):
 	email		= db.StringProperty()
 	password	= db.StringProperty()
-	
-	
-
 	

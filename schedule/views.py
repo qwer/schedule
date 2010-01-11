@@ -57,15 +57,19 @@ def cal(request):
 		return redirect(authSubUrl.__str__())
 	return HttpResponse("Ok")
 
-def create_calendar(calendar_service):
+def createCalendar(calendar_service, title, hidden=False, 
+			summary='', where='', color=None, tz=None):
 	calendar = gdata.calendar.CalendarListEntry()
-	calendar.title = atom.Title(text='Little League Schedule')
-	calendar.summary = atom.Summary(text='This calendar contains practice and game times')
-	calendar.where = gdata.calendar.Where(value_string='Oakland')
-	calendar.color = gdata.calendar.Color(value='#2952A3')
-	calendar.timezone = gdata.calendar.Timezone(value='America/Los_Angeles')
-	calendar.hidden = gdata.calendar.Hidden(value='false')
+	calendar.title = atom.Title(text=title)
+	calendar.summary = atom.Summary(text=summary)
+	calendar.where = gdata.calendar.Where(value_string=where)
+	if color:
+		calendar.color = gdata.calendar.Color(value=color)
+	if tz:
+		calendar.timezone = gdata.calendar.Timezone(value=tz)
+	calendar.hidden = gdata.calendar.Hidden(value='true' if hidden else 'false')
 	new_calendar = calendar_service.InsertCalendar(new_calendar=calendar)
+	return new_calendar
 
 def get_time(timestr):
 	date = datetime.datetime.strptime(timestr[0:19], '%Y-%m-%dT%H:%M:%S')
@@ -252,22 +256,29 @@ def InsertSingleEvent(calendar_service,
 					title='One-time Tennis with Beth', 
 					content='Meet for a quick lesson',
 					where='On the courts', 
-					start_time=None, end_time=None):
+					start_time=None, end_time=None, reccurence=None):
 	event = gdata.calendar.CalendarEventEntry()
 	event.title = atom.Title(text=title)
 	event.content = atom.Content(text=content)
 	event.where.append(gdata.calendar.Where(value_string=where))
 
-	if start_time is None:
-    	# Use current time for the start_time and have the event last 1 hour
+	if start_time is datetime.datetime:
+		start_time = start_time.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+		end_time = end_time.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+	elif start_time is None:
 		start_time = time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime())
 		end_time   = time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime(time.time() + 3600))
-	event.when.append(gdata.calendar.When(start_time=start_time, end_time=end_time))
-
+	
+	if reccurence:
+		event.recurrence = gdata.calendar.Recurrence(text=reccurence)
+	else:
+		event.when.append(gdata.calendar.When(
+				start_time=start_time, end_time=end_time))
+	
 	new_event = calendar_service.InsertEvent(event, calendar)
-					#'/calendar/feeds/gmc2jrirg1850pg1b102n9e56g@group.calendar.google.com/private/full')
-					#'/calendar/feeds/default/allcalendars/full') 
-					#calendar) #'/calendar/feeds/default/private/full')
+		#'/calendar/feeds/gmc2jrirg1850pg1b102n9e56g@group.calendar.google.com/private/full')
+		#'/calendar/feeds/default/allcalendars/full') 
+		#calendar) #'/calendar/feeds/default/private/full')
     
 	print 'New single event inserted: %s' % (new_event.id.text,)
 	print '\tEvent edit URL: %s' % (new_event.GetEditLink().href,)
@@ -277,7 +288,7 @@ def InsertSingleEvent(calendar_service,
 
 def JsonResponse(object, status=200):
 	return HttpResponse(simplejson.dumps(object),
-			mimetype="application/json",
+			#mimetype="application/json",
 			status=status)
 
 class DateTime:
@@ -299,42 +310,89 @@ def nth_index(str, sub, n):
 	return i - 1
 
 def getCalendarService(request):
-	calendar_service = gdata.calendar.service.CalendarService()
-	calendar_service.SetAuthSubToken(request.session["authsub_token"])
-	return calendar_service
+	calendarService = gdata.calendar.service.CalendarService()
+	calendarService.SetAuthSubToken(request.session["authsub_token"])
+	return calendarService
 
 def event(request):
 	user = getAppUser()
 	if not user or not user.calendarId:
 		return JsonResponse(None, 400)
 	
-	r = GetParams(request)
 	if request.method == 'GET':
-		name  = r['name']
-		where = r['where']
-		when  = r['when']
-		i = nth_index(when, "-", 3)
-		start = datetime.datetime.strptime(when[0:i], '%Y-%m-%d  %H:%M')
-		end = datetime.datetime.strptime(when[i + 1:], '%H:%M') 
-		end = start.replace(hour=end.hour, minute=end.minute)
-		#start + datetime.timedelta(hours=1)
-		start = start.strftime('%Y-%m-%dT%H:%M:%S.000Z')
-		end   = end.strftime('%Y-%m-%dT%H:%M:%S.000Z')
-		event = None
-		#try:
-		calendar_service = getCalendarService(request)
-		try:
-			cal = user.calendarId[len('http://www.google.com'):]
-			event = InsertSingleEvent(calendar_service,
-					user.calendarId, name, '', where, start, end)
-		except Exception , err:
-			return JsonResponse(cal + ' ' + err.__str__())
-		
-		return JsonResponse(
-			{ 'id': event.id.text, 'name': name, 'when': when, 'where': where })
+		return event_get(request, user)
 	if request.method == 'PUT':
 		pass
 	return JsonResponse(request.method)
+
+def parseTimes(s):
+	i = nth_index(s, "-", 3)
+	start = datetime.datetime.strptime(s[0:i], '%Y-%m-%d  %H:%M')
+	end = datetime.datetime.strptime(s[i + 1:], '%H:%M') 
+	end = start.replace(hour=end.hour, minute=end.minute)
+	#start = start.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+	#end   = end.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+	return (start, end,)
+
+def insertEvent(cs, calendarId, name, content, where, when, rec):
+	InsertSingleEvent(cs, calendarId, name, content, where, when[0], when[1], rec)
+	
+def addEvent(user, cs, name, where, when, who, repeat):
+	calendars = []
+	if who:
+		try:
+			key = db.Key(who)
+			group = Group.get(key)
+		except:
+			return JsonResponse({}, 404)
+		gg = group.getAllChildren()
+		#gg.append(group)
+		for g in gg:
+			if g.calendarId and len(g.calendarId) > 0 and g.type != 'user':
+				calendars.append(g.calendarId)
+	try:
+		calendars.append(user.calendarId)
+		#event = InsertSingleEvent(calendarService,
+		#		user.calendarId, name, '', where, when[0], when[1])
+		for cal in calendars:
+			event = InsertSingleEvent(cs, cal, name, '',
+					where, when[0], when[1], reccurence(when, repeat))
+	except Exception, err:
+		return JsonResponse(cal + ' ' + err.__str__())
+	
+	return JsonResponse({ 'id': event.id.text })
+
+def reccurence(time, repeat):
+	if repeat == '0':
+		return None
+	if repeat == '7':
+		rrule = 'RRULE:FREQ=WEEKLY'
+	elif repeat == '14':
+		rrule = 'RRULE:FREQ=WEEKLY;INTERVAL=2'
+	else:
+		return None
+	
+	return ('DTSTART:%s\r\n' +
+		    'DTEND:%s\r\n' +
+			 rrule) % (	time[0].strftime('%Y%m%dT%H%M%S'), 
+						time[1].strftime('%Y%m%dT%H%M%S'),)
+	
+
+def event_get(request, user):
+	# XXX errors
+	r = GetParams(request)
+	name   = r['name']
+	where  = r['where']
+	when   = r['when']
+	who    = r['who']
+	repeat = r['repeat']
+	times = parseTimes(when)
+	event = None
+	#try:
+	calendarService = getCalendarService(request)
+	return addEvent(user, calendarService, name, where, times, who, repeat)
+
+	
 
 def groups(request, id=None):
 	user = users.get_current_user()
@@ -453,6 +511,23 @@ def groups_put(request):
 		return JsonResponse({})
 	except:# Exception as e:
 		return JsonResponse(sys.exc_info()[0].__str__()) 
+
+def groups_newcal(request):
+	if not 'id' in request.REQUEST:
+		return JsonResponse({}, 400)
+	id = request.REQUEST['id']
+	try:
+		key = db.Key(id)
+		group = Group.get(key)
+	except:
+		return JsonResponse({}, 404)
+	
+	cs = getCalendarService(request)
+	cal = createCalendar(cs, group.name)
+	calendarId = cal.GetEventFeedLink()
+	group.calendarId = calendarId
+	group.put()
+	return JsonResponse({ 'calId' : calendarId })
 
 def getSystemAccount():
 	try:

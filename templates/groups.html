@@ -91,10 +91,24 @@ function showUser(u) {
 	showInfo(info);
 }
 
+function extractId(url) {
+	if (!url)
+		return null;
+	var s = 'google.com/calendar/feeds/';
+	var i = url.indexOf(s);
+	if (i < 0)
+		return null;
+	url = url.substring(i + s.length);
+	i = url.indexOf('/');
+	return i < 0 ? url : url.substring(0, i);
+}
+
 function showGroup(g) {
 	var info = $('#group-info');
 	info.find('#group-name').html(g.name);
 	info.find('#group-calendar').attr('value', g.calId);
+	info.find('#group-calendar-link').attr('href', 
+		'http://www.google.com/calendar/embed?src=' + extractId(g.calId));
 	showInfo(info);
 }
 
@@ -114,13 +128,39 @@ function saveUser(tree) {
 	saveSelectedGroup(tree);
 }
 
+function saveGroup2(tree) {
+	var g = tree.selectedGroup;
+	var info = $('#group-info');
+	g.name = info.find('#group-name').html();
+	g.calId = info.find('#group-calendar').attr('value');
+	saveSelectedGroup(tree);
+}
+
+function createGroupCalendar(tree) {
+	var g = tree.selectedGroup;
+	block($('#table')[0], 0, 300);
+	jsonGet('/groups_newcal/', { id: g.id }, 
+		function (data) {
+			g.calId = data.calId;
+			$('#group-info').find('#group-calendar').attr('value', g.calId);
+		},
+		function () {
+			alert('error');
+		},
+		reduce2(unblockElement, $('#table'), 0)
+	);
+}
+
 $(document).ready(function() {
-	createList('#group-list', groups);
-	return;
-	tree = createTree(groups, '#tree', treeImages, true);
+	//createList('#group-list', groups);
+	//return;
+	tree = createTree(groups, '#tree', treeImages, false);
 	tree.nodeSelected(groupSelected);
 	var info = $('#user-info');
 	info.find('#user-submit').click(reduce(saveUser, tree));
+	info = $('#group-info');
+	info.find('#group-submit').click(reduce(saveGroup2, tree));
+	info.find('#group-new-calendar').click(reduce(createGroupCalendar, tree));
 });
 </script>
 {% endblock %}
@@ -135,6 +175,7 @@ $(document).ready(function() {
 	<a href="#" class="new"></a>
 </span>
 
+<div id="table">
 <table border="1" width="100%" height="100%">
 <tr>
 	<td >
@@ -146,18 +187,26 @@ $(document).ready(function() {
 				<table>
 					<tr><td>user</td><td><span id="user-name"></span></td></tr>
 					<tr><td>e-mail</td><td><input type="text" id="user-account"/></td></tr>
-					<tr><td>calendar</td><td><input type="text" id="user-calendar"/></td></tr>
+					<tr><td>calendar</td><td><input type="text" id="user-calendar"/><a href="" target="_blank">Show</a></td></tr>
 					<tr><td></td><td><input type="submit" value="Save" id="user-submit"/></td></tr>
 				</table>
 			</div>
 			<div id="group-info" style="display:none;">
-				name <span id="group-name"></span><br/>
-				calendar <input type="text" id="group-calendar"/>
+				<table>
+					<tr><td>name</td><td><span id="group-name"></span></td></tr>
+					<tr><td>calendar</td>
+						<td><input type="text" id="group-calendar" size="50"/>
+							<input type="button" id="group-new-calendar" value="Create" />
+							<a id ="group-calendar-link" href="" target="_blank">Show</a>
+					</td></tr>
+					<tr><td></td><td><input type="submit" value="Save" id="group-submit"/></td></tr>
+				</table>
 			</div>
 		</div>
 	</td>
 </tr>
 </table>
+</div>
 
 <br/><br/>
 

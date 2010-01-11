@@ -67,9 +67,9 @@ function unblockElement(el, t, onUnblock) {
 	clearTimeout(e.uiBlockTimeout);
 
 	if (t != undefined)
-		$(el).unblock( { fadeOut: t, onUnblock: onUnblock });
+		$(el).unblock({ fadeOut: t, onUnblock: onUnblock });
 	else
-		$(el).unblock( { onUnblock: onUnblock });
+		$(el).unblock({ onUnblock: onUnblock });
 }
 
 function unblock(t, onUnblock) {
@@ -81,4 +81,27 @@ function unblock(t, onUnblock) {
 	else
 		$.unblockUI( { onUnblock: onUnblock });
 }
+
+function json(method, url, obj, success, error, complete) {
+	return $.ajax({
+		url: url,
+		type: method,
+		cache: false,
+		dataType: 'json',
+		data: obj,
+		async: true,
+		success: success,
+		error: error,
+		complete: complete
+	});
+}
+
+function jsonGet(url, obj, success, error, complete) {
+	return json('GET', url, obj, success, error, complete);
+}
+
+function jsonPut(url, obj, success, error, complete) {
+	return json('PUT', url, obj, success, error, complete);
+}
+
 

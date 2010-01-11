@@ -95,7 +95,10 @@ function Time(hours, minutes) {
 		this.hours = hours;
 		this.minutes = minutes;
 	}
-	this.toString = function() { return "" + this.hours + ":" + this.minutes; };
+	this.toString = function() {
+		return (this.hours < 10 ? "0" : "") + this.hours + ":" +
+			(this.minutes < 10 ? "0" : "") + this.minutes; 
+	};
 }
 
 function createCalendar(id) {
@@ -157,6 +160,7 @@ function EventData() {
 	this.name = null;
 	this.where = null;
 	this.when = null;
+	this.who = null;
 }
 
 function reduce0(f) {
@@ -244,7 +248,6 @@ function getPos(el) {
 		return getPos2(el); 
 }
 
-
 function createBackground() {
 	background = $('<div></div>');
 	background.appendTo($('body')[0]);
@@ -328,14 +331,32 @@ function hideCopy() {
 	dragElement.copy.css('display', 'none');
 }
 
+function mouseDown(e) {
+	return;
+	if (!e)
+		e = window.event;
+	
+	var pos = mouseCoords(e);
+	box.css('left', bx = pos.x);
+	box.css('top', by = pos.y);
+}
+var bx, by;
+function mouseDrag(e) {
+	return;
+	if (!e)
+		e = window.event;
+	var mousePos = mouseCoords(e);
+	box.css('width', mousePos.x - bx);
+	box.css('height', mousePos.y - by);
+}
+
 function mouseMove(e) {
 	if (!e)
 		e = window.event;
+	
 	$('#drag').html(' ' + e.clientX + ', ' + e.clientY);
 	if (!dragging) 
 		return;
-
-	var mousePos = mouseCoords(e);
 
 	if (!background)
 		createBackground();
@@ -345,7 +366,8 @@ function mouseMove(e) {
 		createCopy();
 		dragElement.innerHTML = '';
 	}
-	
+
+	var mousePos = mouseCoords(e);
 	//alert(mousePos.x + ', ' + mousePos.y);
 	var el = dragElement.copy;
 	$(el).css('left', mousePos.x + d.x);
@@ -425,11 +447,11 @@ function moveEvent(cell1, cell2) {
 	var data1 = cell1.data;
 	var data2 = cell2.data;
 	if (data2)
-		setCellData(cell1, data2.name, data2.where, data2.when);
+		setCellData(cell1, data2.name, data2.where, data2.when, data2.who);
 	else
 		setCellData(cell1, null);
 	if (data1)
-		setCellData(cell2, data1.name, data1.where, data1.when);
+		setCellData(cell2, data1.name, data1.where, data1.when, data1.who);
 	else
 		setCellData(cell2, null);
 }
@@ -442,7 +464,13 @@ function createEvent(event, cell)
 		type: 'GET', 
 		cache: false,
 		dataType: 'json',
-		data: event,
+		data: {
+			name:	event.name, 
+			when:	event.when,
+			where:	event.where,
+			who:	event.who.id,
+			repeat: event.repeat
+		},
 		async: true,
 		success: function(data) {
 			alert(data + '\n' + data.id);
@@ -461,14 +489,17 @@ function modifyEvent()
 	
 }
 
-function setCellData(cell, name, where, when) {
+function setCellData(cell, name, where, when, who, repeat) {
 	if (name) {
+		//show(who);
 		var oldData = cell.data;
-		cell.innerHTML = name + "<br/>" + where + "<br/>";
+		cell.innerHTML = name + "<br/>" + where + "<br/>" + who.name;
 		cell.data = new EventData();
 		cell.data.name = name;
 		cell.data.where = where;
 		cell.data.when = when;
+		cell.data.who = who; 
+		cell.data.repeat = repeat;
 		$(cell).attr('class', 'calendar_td calendar-data');
 		if (oldData)
 			modifyEvent(oldData, cell.data);
@@ -492,6 +523,11 @@ function Form(divId) {
 	var pl = places.split(' ');
 	for (var i = 0; i < pl.length; i++)
 		$('<option>' + pl[i] + '</option>').appendTo(this.eventWhere);
+	this.eventWho = $('#event-who-select')[0];
+	groups = createList(this.eventWho, groups);
+	this.eventOnce = $("#event-once", this.div)[0];
+	this.eventWeekly = $("#event-weekly", this.div)[0];
+	this.eventFortnightly = $("#event-fortnightly", this.div)[0];
 }
 
 function noClick() {
@@ -533,15 +569,10 @@ function unblock(t, onUnblock) {
 		$.unblockUI( { onUnblock: onUnblock });// : { onUnblock: onUnblock });
 }
 
-function create(constr, obj) {
-	obj.constructor = constr;
-	constr.call(obj);
-}
-
 function loadEvents() {
 	block();
 	$.ajax({ 
-		url: '/events/', 
+		url: '/events/',
 		cache: false,
 		dataType: 'json',
 		async: false,
@@ -552,11 +583,11 @@ function loadEvents() {
 			times = data.times;
 			dates = data.dates;
 			for (var i = 0; i < times.length; i++) {
-				create(Time, times[i].start);
-				create(Time, times[i].end);
+				extend(Time, times[i].start);
+				extend(Time, times[i].end);
 			}
 			for (var i = 0; i < dates.length; i++) {
-				create(Date, dates[i]);
+				extend(Date, dates[i]);
 			}
 			unblock();
 			form = new Form('question');
@@ -570,6 +601,37 @@ function loadEvents() {
 
 function getCellDateTime(cell) {
 	return new DateTime(dates[cell.xindex], times[cell.yindex]);
+}
+
+function yesClick() {
+	var repeat = 0;
+	if (form.eventWeekly.checked)
+		repeat = 7;
+	else if (form.eventFortnightly.checked)
+		repeat = 14;
+	setCellData(form.cell,
+		form.eventName.value, 
+		form.eventWhere.value,
+		getCellDateTime(form.cell),
+		groups[form.eventWho.value],
+		repeat);//selectedIndex]
+	
+	unblock(0, function() {});
+	/*block();
+ 	setTimeout(function() {
+		$.ajax({ 
+			url: 'wait.html', 
+			cache: false, 
+			success: function() { 
+				unblock();
+			},
+			error: function() { 
+				unblock();
+				cellDeselect(form.cell); 
+			}
+		});
+	}, 1000);
+	*/
 }
 
 function createCalendars(id) {
@@ -591,7 +653,7 @@ function saveCalendar() {
 	var i = sel.attr('selectedIndex');
 	$.ajax({ 
 		url: '/calendars/',
-		typeType: 'json',
+		dataType: 'json',
 		data: { id: calendars[i].id },
 		cache: false, 
 		success: function() {
@@ -613,29 +675,7 @@ $(document).ready(function() {
 		$.blockUI({ message: $('#question') }); //, css: { width: '275px' }
 	}); 
 
-	$('#yes').click(function() {
-		unblock(0, function() {
-			setCellData(form.cell, 
-				form.eventName.value, 
-				form.eventWhere.value,
-				getCellDateTime(form.cell));
-		});
-		/*block();
-	 	setTimeout(function() {
-			$.ajax({ 
-				url: 'wait.html', 
-				cache: false, 
-				success: function() { 
-					unblock();
-				},
-				error: function() { 
-					unblock();
-					cellDeselect(form.cell); 
-				}
-			});
-		}, 1000);
-		*/
-	}); 
+	$('#yes').click(yesClick);
 	$('#no').click(noClick);
 
 	loadEvents();
@@ -645,20 +685,24 @@ $(document).ready(function() {
 	else
 		createCalendars('calendars');
 
-	createList('#event-who-select', groups);
+	box = $('#box');
 }); 
-
+var box = null;
 var groups = {{ groups_json|safe }};
 
 document.captureEvents(Event.MOVE);
+document.onmousedown = mouseDown;
 document.onmousemove = mouseMove;
+//document.onmousedrag = mouseDrag;
 document.onmouseup = mouseUp;
 
 //onload = createCalendar('calendar')
 </script>
 {% endblock %}
 {% block content %}
+
 <a href="javascript:;" onclick="createCalendar('calendar')">calendar</a>
+
 <div id="calendars" style="display:none">
 	<select id="select-calendar"></select>
 	<br/>
@@ -667,6 +711,7 @@ document.onmouseup = mouseUp;
 	<br/>
 	<input type="submit" id="save-calendar" value="Save"/>
 </div>
+
 <div id="calendar"></div>
 
 <!-- 
@@ -675,20 +720,30 @@ document.onmouseup = mouseUp;
 
 <input id="test" type="submit" value="Show Dialog" /> 
 -->
-<div id="question" style="display:none; cursor: default" align="center">
-	<table height="100%" id="formtable"><tr><td class='message-td' align="center">
-	<div class='message'>
-		<h3>Event</h3>
-		<table>
-			<tr><td>Название</td><td><input type="text" id="event-name"/></td></tr>
-			<tr><td>Место</td><td><select id="event-where"></select></td></tr>
-			<tr><td>Время</td><td><div id="event-when"></div></td></tr>
-			<tr><td>Кто</td><td><div id="event-who"><select id="event-who-select"></select></div></td></tr>
-		</table>
-		<input type="button" id="yes" value="OK" /> 
-		<input type="button" id="no" value="Cancel" /> 
-	</div>
+<div id="question" style="display: none; cursor: default" align="center">
+	<form>
+	<table height="100%" id="formtable">
+	<tr><td class='message-td' align="center">
+		<div class='message'>
+			<h3>Event</h3>
+			<table cellpadding="5px" cellspacing="0">
+				<tr><td>Название</td><td><input type="text" id="event-name"/></td></tr>
+				<tr><td>Место</td><td><select id="event-where"></select></td></tr>
+				<tr><td>Время</td>
+					<td>
+						<div id="event-when"></div>
+						<input type="radio" name="repeat" id="event-once"/>Однократно<br/>
+						<input type="radio" name="repeat" id="event-weekly" checked="checked"/>Раз в неделю<br/>
+						<input type="radio" name="repeat" id="event-fortnightly"/>Раз в две недели<br/>
+					</td>
+				</tr>
+				<tr><td>Кто</td><td><div id="event-who"><select id="event-who-select"></select></div></td></tr>
+			</table>
+			<input type="button" id="yes" value="OK" /> 
+			<input type="button" id="no" value="Cancel" /> 
+		</div>
 	</td></tr></table>
+	</form>
 </div> 
 <!--
 <div id="question1" style="display:none; cursor: default" align="center">
@@ -706,7 +761,9 @@ document.onmouseup = mouseUp;
 	wer werwerwr
 	wer wer
 </span>
+
 <span id="d"></span>
-<div id="cell">
-</div>
+
+<div id="cell"></div>
+<div id="box" style="position: absolute; border: 1px solid;">div</div> 
 {% endblock %}
