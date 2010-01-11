@@ -34,7 +34,7 @@ class User(Group):
 	
 	def json(self):
 		return { 
-			'name':  self.name, 
+			'name':  self.name,
 			'id':    self.key().__str__(),
 			'type':  self.type(),
 			'calId': self.calendarId,

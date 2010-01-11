@@ -62,7 +62,7 @@ def createCalendar(calendar_service, title, hidden=False,
 	calendar = gdata.calendar.CalendarListEntry()
 	calendar.title = atom.Title(text=title)
 	calendar.summary = atom.Summary(text=summary)
-	calendar.where = gdata.calendar.Where(value_string=where)
+	calendar.where = gdata.calendar.Where(text=where, value_string=where)
 	if color:
 		calendar.color = gdata.calendar.Color(value=color)
 	if tz:
@@ -71,10 +71,12 @@ def createCalendar(calendar_service, title, hidden=False,
 	new_calendar = calendar_service.InsertCalendar(new_calendar=calendar)
 	return new_calendar
 
-def get_time(timestr):
+def getTime(timestr):
 	date = datetime.datetime.strptime(timestr[0:19], '%Y-%m-%dT%H:%M:%S')
+	if len(timestr) <= 24:
+		return date
 	seconds = 3600 * int(timestr[24:26]) + 60 * int(timestr[27:29])
-	if (timestr[23] == '+'):
+	if timestr[23] == '+':
 		return date - datetime.timedelta(0, seconds)
 	else:
 		return date + datetime.timedelta(0, seconds)
@@ -111,7 +113,7 @@ def authsub(request):
 	#	'/calendar/feeds/default/owncalendars/full/a63fvb48%40gmail.com')
 	#	'/calendar/feeds/default/allcalendars/full/gmc2jrirg1850pg1b102n9e56g%40group.calendar.google.com')
 	#feed = calendar_service.GetCalendarListFeed()
-	#evt = get_time(feed.entry[1].when[0].start_time)
+	#evt = getTime(feed.entry[1].when[0].start_time)
 	#uri = feed.entry[0].GetEditLink().href
 	event = None#uri
 	#feed = calendar_service.GetCalendarEventFeed(uri)
@@ -188,8 +190,18 @@ def calendar(request):
 		 'calendars': simplejson.dumps(calendars)},
 			context_instance=RequestContext(request))
 
-def make_time(h, m):
+def makeTime(h=0, m=0, time=None):
+	if time:
+		h = time.hour
+		m = time.minute
 	return { 'hours': h, 'minutes': m }
+	
+def makeDate(y=1, m=1, d=1, date=None):
+	if date:
+		y = date.year
+		m = date.month
+		d = date.day
+	return { 'year': y, 'month': m, 'day': d }
 	
 def events(request):
 	times = []
@@ -197,8 +209,8 @@ def events(request):
 	t2 = t1 + 95
 	for i in range(0, 10):
 		times.append({
-			'start': make_time(t1 / 60, t1 % 60),
-			'end':   make_time(t2 / 60, t2 % 60) });
+			'start': makeTime(t1 / 60, t1 % 60),
+			'end':   makeTime(t2 / 60, t2 % 60) });
 		t1 += 105
 		t2 += 105
 		
@@ -208,11 +220,16 @@ def events(request):
 	for i in range(0, 7):
 		dates.append({ 'year': d.year, 'month': d.month, 'day': d.day }) 
 		d += datetime.timedelta(days=1)
-		
+	
+	cs = getCalendarService(request)
+	if 'html' in request.REQUEST:
+		del request.REQUEST['html']
+	events = getEventsForRequest(request)
 	return JsonResponse({ 
 		'places': 'L1 L2 L3 L4 478 479',
 		'times'	: times,
-		'dates'	: dates
+		'dates'	: dates,
+		'events': events
 	})
 
 def getCalId(str):
@@ -227,30 +244,75 @@ def getEvents(cs, calId, startDate, endDate):
 	query.start_max = endDate.strftime('%Y-%m-%d')
 	return cs.CalendarQuery(query)
 
-def events2(request):
+def getEventsForRequest(request):
 	user = getAppUser()
 	if not user or not user.calendarId:
 		return JsonResponse(None, 400)
 	
 	r = GetParams(request)
-	if 'start' in r:
-		startDate = datetime.datetime.strptime(r['start'], '%Y-%m-%d')
-	else:
-		startDate = datetime.datetime.now()
-		startDate -= datetime.timedelta(startDate.date().weekday())
-	
-	endDate = startDate + datetime.timedelta(days=7)
+	try:
+		if 'start' in r:
+			startDate = datetime.datetime.strptime(r['start'], '%Y-%m-%d')
+		else:
+			startDate = datetime.datetime.now()
+			startDate -= datetime.timedelta(startDate.date().weekday())
+		
+		if 'end' in r:
+			endDate = datetime.datetime.strptime(r['end'], '%Y-%m-%d')
+		else:
+			endDate = startDate + datetime.timedelta(days=7)
+	except Exception, e:
+		return HttpResponse(str(e))
 	
 	calendarService = getCalendarService(request)
-	feed = getEvents(calendarService, user.calendarId, startDate, endDate) 
-	s = ''
-	for i, event in enumerate(feed.entry):
-		s += '\t%s. %s\n' % (i, event.title.text,)
-		for when in event.when:
-			s += '\t\tStart time: %s\n' % (when.start_time,)
-			s += '\t\tEnd time:   %s\n' % (when.end_time,)
-	return HttpResponse(s)
+	feed = getEvents(calendarService, user.calendarId, startDate, endDate)
+	if 'html' in r:	 
+		s = ''
+		for i, event in enumerate(feed.entry):
+			s += '\t%s. %s\n' % (i, event.title.text,)
+			for when in event.when:
+				s += '\t\tStart time: %s\n' % when.start_time
+				s += '\t\tEnd time:   %s\n' % when.end_time
+			s += '\t\tId: %s\n' % event.id.text
+			s += '\t\tWhere: %s\n' % str(event.where[0])
+			#for p in event.__dict__:
+			#	s += '\t\t%s : %s %s\n\n' % (p, str(event.__dict__[p]), event.__dict__[p].__class__)
+				#if p == 'where':
+				#	for pp in event.__dict__[p].__dict__:
+				#		s += '\t\t\t%s : %s\n\n' % (pp, str(event.__dict__[p].__dict__[pp]),)
+			if event.original_event:
+				s += '\t\tOriginal: %s\n' % event.original_event.id 
+		return s
+	else:
+		events = []
+		for event in feed.entry:
+			for when in event.when:
+				e = {}
+				e['name'] = event.title.text
+				e['when'] = convertWhen(when)
+				e['where'] = event.where[0].value_string
+				e['id'] = event.id.text
+				e['status'] = event.event_status.value
+				if event.original_event:
+					e['orig_id'] = event.original_event.id
+				events.append(e)
+		return events
 
+def events2(request):
+	e = getEventsForRequest(request)
+	if type(e) is str:
+		return HttpResponse(e)
+	else:
+		return JsonResponse(e)
+	
+def convertWhen(when):
+	start = getTime(when.start_time)
+	end = getTime(when.end_time) 
+	return { 'start' : { 'date' : makeDate(date=start.date()),
+						 'time' : makeTime(time=start) },
+			 'end'   : { 'date' : makeDate(date=end.date()),
+						 'time' : makeTime(time=end) } }
+	
 def InsertSingleEvent(calendar_service,
 					calendar,
 					title='One-time Tennis with Beth', 
