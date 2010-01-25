@@ -1,7 +1,7 @@
 from django.conf.urls.defaults import *
 #from views import hello, current_datetime, hours_ahead, contact
 from views import index, authsub, cal, calendar, events, events2, event, systemAccount
-from views import filter, clearSession, calendars
+from views import filter, clearSession, calendars, sync
 from views import groups, groups_post, groups_delete, groups_put, groups_newcal
 
 filters = filter
@@ -20,6 +20,7 @@ urlpatterns = filterViews(
 	'',
 	(r'^$', index), #lambda request: filter(index, request)),
 	(r'^cal/$', cal),
+	(r'^sync/$', sync),
 	(r'^calendar/$', calendar),
 	(r'^calendars/$', calendars),
 	(r'^events/$', events),

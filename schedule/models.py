@@ -2,6 +2,10 @@ from appengine_django.models import BaseModel
 from google.appengine.ext.db.polymodel import PolyModel
 from google.appengine.ext import db
 
+class Callable:
+	def __init__(self, callable):
+		self.__call__ = callable
+
 class Group(PolyModel):
 	name		= db.StringProperty()
 	parentGroup	= db.SelfReferenceProperty()
@@ -16,7 +20,7 @@ class Group(PolyModel):
 			'id':    self.key().__str__(),
 			'type':  self.type(),
 			'calId': self.calendarId 
-		} 
+		}
 		
 	def getAllChildren(self):
 		children = [self]
@@ -24,7 +28,15 @@ class Group(PolyModel):
 		for g in query.fetch(10000):
 			children.extend(g.getAllChildren())
 		return children
-
+	
+	def getByName(name):
+		query = Group.all().filter('name =', name)
+		for g in query.fetch(10000):
+			return g
+		return None
+	
+	getByName = Callable(getByName)
+		
 class Place(Group):
 	pass
 	

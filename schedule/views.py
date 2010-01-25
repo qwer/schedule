@@ -27,6 +27,8 @@ from google.appengine.ext import db
 
 from models import Group, User, SystemAccount
 import calendar
+from sync import Sync
+from calendar import CS
 from urlparse import parse_qsl, parse_qs
 
 def get_auth_sub_url(request):
@@ -190,6 +192,11 @@ def calendar(request):
 		 'calendars': simplejson.dumps(calendars)},
 			context_instance=RequestContext(request))
 
+def sync(request):
+	cs = getCalendarService(request)
+	user = getAppUser()
+	return HttpResponse(Sync(cs).sync(user))
+
 def makeTime(h=0, m=0, time=None):
 	if time:
 		h = time.hour
@@ -232,18 +239,6 @@ def events(request):
 		'events': events
 	})
 
-def getCalId(str):
-	s = '/calendar/feeds/'
-	str = str[len(s) + str.index(s):]
-	return str.split('/')
-
-def getEvents(cs, calId, startDate, endDate):
-	a = getCalId(calId)
-	query = gdata.calendar.service.CalendarEventQuery(a[0], a[1], a[2])
-	query.start_min = startDate.strftime('%Y-%m-%d')
-	query.start_max = endDate.strftime('%Y-%m-%d')
-	return cs.CalendarQuery(query)
-
 def getEventsForRequest(request):
 	user = getAppUser()
 	if not user or not user.calendarId:
@@ -265,7 +260,7 @@ def getEventsForRequest(request):
 		return HttpResponse(str(e))
 	
 	calendarService = getCalendarService(request)
-	feed = getEvents(calendarService, user.calendarId, startDate, endDate)
+	feed = CS(calendarService).getEvents(user.calendarId, startDate, endDate)
 	if 'html' in r:	 
 		s = ''
 		for i, event in enumerate(feed.entry):
@@ -312,41 +307,7 @@ def convertWhen(when):
 						 'time' : makeTime(time=start) },
 			 'end'   : { 'date' : makeDate(date=end.date()),
 						 'time' : makeTime(time=end) } }
-	
-def InsertSingleEvent(calendar_service,
-					calendar,
-					title='One-time Tennis with Beth', 
-					content='Meet for a quick lesson',
-					where='On the courts', 
-					start_time=None, end_time=None, reccurence=None):
-	event = gdata.calendar.CalendarEventEntry()
-	event.title = atom.Title(text=title)
-	event.content = atom.Content(text=content)
-	event.where.append(gdata.calendar.Where(value_string=where))
 
-	if start_time is datetime.datetime:
-		start_time = start_time.strftime('%Y-%m-%dT%H:%M:%S.000Z')
-		end_time = end_time.strftime('%Y-%m-%dT%H:%M:%S.000Z')
-	elif start_time is None:
-		start_time = time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime())
-		end_time   = time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime(time.time() + 3600))
-	
-	if reccurence:
-		event.recurrence = gdata.calendar.Recurrence(text=reccurence)
-	else:
-		event.when.append(gdata.calendar.When(
-				start_time=start_time, end_time=end_time))
-	
-	new_event = calendar_service.InsertEvent(event, calendar)
-		#'/calendar/feeds/gmc2jrirg1850pg1b102n9e56g@group.calendar.google.com/private/full')
-		#'/calendar/feeds/default/allcalendars/full') 
-		#calendar) #'/calendar/feeds/default/private/full')
-    
-	print 'New single event inserted: %s' % (new_event.id.text,)
-	print '\tEvent edit URL: %s' % (new_event.GetEditLink().href,)
-	print '\tEvent HTML URL: %s' % (new_event.GetHtmlLink().href,)
-	
-	return new_event
 
 def JsonResponse(object, status=200):
 	return HttpResponse(simplejson.dumps(object),
@@ -396,8 +357,8 @@ def parseTimes(s):
 	#end   = end.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 	return (start, end,)
 
-def insertEvent(cs, calendarId, name, content, where, when, rec):
-	InsertSingleEvent(cs, calendarId, name, content, where, when[0], when[1], rec)
+#def insertEvent(cs, calendarId, name, content, where, when, rec, who):
+#	InsertSingleEvent(cs, calendarId, name, content, where, when[0], when[1], rec, who)
 	
 def addEvent(user, cs, name, where, when, who, repeat):
 	calendars = []
@@ -412,15 +373,20 @@ def addEvent(user, cs, name, where, when, who, repeat):
 		for g in gg:
 			if g.calendarId and len(g.calendarId) > 0 and g.type != 'user':
 				calendars.append(g.calendarId)
-	try:
-		calendars.append(user.calendarId)
-		#event = InsertSingleEvent(calendarService,
-		#		user.calendarId, name, '', where, when[0], when[1])
-		for cal in calendars:
-			event = InsertSingleEvent(cs, cal, name, '',
-					where, when[0], when[1], reccurence(when, repeat))
-	except Exception, err:
-		return JsonResponse(cal + ' ' + err.__str__())
+	#try:
+	calendars.append(user.calendarId)
+	#return JsonResponse(calendars)
+	#event = InsertSingleEvent(calendarService,
+	#		user.calendarId, name, '', where, when[0], when[1])
+	cs2 = CS(cs)
+	for cal in calendars:
+		event = cs2.InsertSingleEvent(cal, name, '',
+				where, when[0], when[1], reccurence(when, repeat), 
+				{	'name': user.name if cal != user.calendarId else group.name, 
+					'email': getSystemAccount().email 
+				})
+	#except Exception, err:
+	#	return JsonResponse(cal + ' ' + err.__str__())
 	
 	return JsonResponse({ 'id': event.id.text })
 
